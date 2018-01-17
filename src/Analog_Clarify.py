@@ -10,6 +10,11 @@ import  cmath
 from scipy.fftpack import fft,fft2,fftn,fftshift
 from mpl_toolkits.mplot3d import Axes3D
 
+'''
+采用通信中的传统提取特征谱的方式，识别信号的调制类别
+'''
+
+
 
 # 计算相关函数及其谱密度
 def selfCor(x, a):
