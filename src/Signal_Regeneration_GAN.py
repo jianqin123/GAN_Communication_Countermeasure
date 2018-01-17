@@ -53,17 +53,16 @@ interval_save=1000
 interval_points=100
 
 # code version
-model_name="model_WGAN"
+model_name="GAN"
+
+digital_modulation=[]
 
 config = tf.ConfigProto(allow_soft_placement=True, log_device_placement=False)
 config.gpu_options.allow_growth = True
 
 
-
-
-
-def buildData(type,number,result_save):
-    path = os.path.join('..', 'signal_data',type)
+def buildData(type, number,result_save):
+    path = os.path.join('..', 'signal_data', type)
     print("read real data from {} ".format(path))
     data_real = np.ones((1, number))
     for file in os.listdir(path):
@@ -73,21 +72,22 @@ def buildData(type,number,result_save):
             else:
                 signal = sio.loadmat(os.path.join(path, file))['s']
 
-            signal = np.reshape(signal[:, 0:-(signal.shape[1] % number)], [-1, number])
-
-
-            if type in set(['8PSKGray','CPFSK']):
-                data_I =  signal.real
+            if type in set(['8PSKGray', 'CPFSK']):
+                signal = signal[0:-(signal.shape[0] % number), :]
+                signal = np.reshape(signal, [-1, number])
             else:
-                data_I=signal
-            print("shape of data_I",data_I.shape)
+                signal = signal[:, 0:-(signal.shape[1] % number)]
+                signal = np.reshape(signal, [-1, number])
 
+            if type in set(['8PSKGray', 'CPFSK']):
+                data_I = signal.real
+            else:
+                data_I = signal
             data_real = np.vstack((data_real, data_I))
+            draw_Series_Grid(data_I, "real_data", result_save, "real_data_{}".format(os.path.splitext(file)[0]), row=2,col=2)
+        data_real = data_real[1:]
+        return data_real
 
-            draw_Series_Grid(data_I, "real_data", result_save, "real_data_{}".format(os.path.splitext(file)[0]), row=2,
-                             col=2)
-    data_real = data_real[1:]
-    return data_real
 #lrelu activation  function
 def lrelu(x, leak=0.3, name="lrelu"):
     with tf.variable_scope(name):
@@ -188,7 +188,6 @@ class model :
         for i in range(len) :
             train= ly.fully_connected(
                train, size[i], activation_fn=None, normalizer_fn=ly.batch_norm,scope='g{}'.format(i+1))
-            print("train_{}.name".format(i+1),train.name)
             train_names.append(train.name)
             if  self.Noise & (not recover):
                 noise = noise_dist.sample(train.get_shape().as_list())
@@ -285,6 +284,10 @@ class model :
         if self.loss=="LSGAN":
             c_loss, g_loss = self.ls_GAN( true_logit, fake_logit)
 
+        print(c_loss,g_loss)
+        tf.summary.scalar('c_loss', c_loss)
+        tf.summary.scalar('g_loss', g_loss)
+
         theta_g = tf.get_collection(
             tf.GraphKeys.TRAINABLE_VARIABLES, scope='generator')
         theta_c = tf.get_collection(
@@ -302,27 +305,36 @@ class model :
                                  variables=theta_c, global_step=counter_c,
                                  summaries=['gradient_norm'])
 
-        return opt_g, opt_c, real_data,train_names
+        tf.summary.scalar('c_loss', opt_c)
+        tf.summary.scalar('g_loss', opt_g)
+        merged=tf.summary.merge_all()
+        return opt_g, opt_c, real_data,train_names,merged,c_loss,g_loss
 
 
     def train(self):
 
         tf.reset_default_graph()
         with tf.device(device):
-            opt_g, opt_c, real_data,train_names = self.build_graph()
+            opt_g, opt_c, real_data,train_names,merged,c_loss,g_loss= self.build_graph()
 
         label="G_{}_D_{}_{}_{}_{}".format("M" if self.is_mlp_g else "C","M" if self.is_mlp_c else "C" ,self.loss,self.number,"Noise" if self.Noise else "")
-        print(label+"  " + str(train_names))
+        print(label)
        #模型保存路径和结果保存路径
         model_save=os.path.join('..','model',self.type,label)
         result_save=os.path.join('..','result',self.type,label)
+        log_save=os.path.join('..','log',self.type,label)
+        data_save=os.path.join('..','data',self.type,label)
+
         if not os.path.exists(model_save):
             os.makedirs(model_save)
-
         if not os.path.exists(result_save):
             os.makedirs(result_save)
+        if not os.path.exists(log_save):
+            os.makedirs(log_save)
+        if not os.path.exists(data_save):
+            os.makedirs(data_save)
 
-        data_real=buildData(self.type,self.number)
+        data_real=buildData(self.type,self.number,result_save)
 
         print("amount of real data to train :",data_real.shape)
 
@@ -332,43 +344,37 @@ class model :
             train_sig=np.reshape(self.get_Signal_FromData(data_real),(self.batch_size,1,self.number,1))
             feed_dict = {real_data: train_sig}
             return feed_dict
-        data_optima=[]
 
         with tf.Session(config=config) as sess:
             sess.run(tf.global_variables_initializer())
+            file_writer=tf.summary.FileWriter(log_save,sess.graph)
             for i in range(self.max_iter_step):
                 #save model
                 if(i%interval_save==0):
                     saver.save(sess,os.path.join(model_save,model_name),global_step=i)
+                    data=sess.run(tf.get_default_graph().get_tensor_by_name(train_names[-1]))
+                    np.save(data_save,data)
 
-                if  (i < 25 or i % 500 == 0):
-                    citers = 100
-                else:
-                    citers = Citers
+                # if  (i < 25 or i % 500 == 0):
+                #     citers = 100
+                # else:
+                citers = Citers
 
-                opt_c_value_mean = 0
+
                 for j in range(citers):
                     feed_dict = next_feed_dict()
-                    opt_c_value = sess.run([opt_c], feed_dict=feed_dict)
-                    opt_c_value_mean += opt_c_value[0]
-                opt_c_value_mean /= citers
+                    sess.run([opt_c], feed_dict=feed_dict)
+
+                sess.run([opt_g], feed_dict=next_feed_dict())
+
                 feed_dict = next_feed_dict()
-                opt_g_value = sess.run([opt_g], feed_dict=feed_dict)
                 if(i%interval_points==0):
-                    data_optima.append([i,opt_c_value_mean,opt_g_value[0]])
-                    print(" {} / {}   opt_c_value_mean:{}   opt_g_value:{} ".format(i, self.max_iter_step, opt_c_value_mean,
-                                                                           opt_g_value))
+                    # merged,c_loss,g_loss=sess.run([merged,c_loss,g_loss],feed_dict=feed_dict)
+                    merged_info,c_loss_value, g_loss_value = sess.run([merged,c_loss,g_loss], feed_dict=feed_dict)
+                    file_writer.add_summary(merged_info,i)
+                    print(" {} / {}   c_loss:{}   g_loss:{} ".format(i, self.max_iter_step, c_loss_value,g_loss_value))
         # save  the the optimzation data when training this model
-        data_optima=np.array(data_optima)
-        np.save(result_save,data_optima)
-        x=data_optima[:,0]
-        pl1,=pl.plot(x,data_optima[:,1],"r")
-        pl2,=pl.plot(x,data_optima[:,2],"g")
-        pl.xlabel("iteration_counts")
-        pl.ylabel("loss")
-        pl.title("optimazation process for {}".format(label))
-        pl.legend(handles=[pl1,pl2],labels=['opt_c_value_mean','opt_g_value'])
-        pl.savefig(os.path.join(result_save,"pic_optima"))
+        file_writer.close()
         sess.close()
         return  train_names,self.type,label,self.number,model_save,result_save
 
@@ -389,9 +395,9 @@ def oneSolution(batch_size,is_mlp_g,is_mlp_c,max_iter_step,Noise,loss,type,numbe
 
 def searchParam():    # main()
     # batch_size_=[16,32,64,128,256]
-    real_data_ = ['AM', 'DSB', 'USB', 'LSB', 'FM']
-    # real_data_=['AM','DSB']
-    number_=[512,1024]
+    # real_data_ = ['DSB', 'USB', 'LSB','8PSKGray','CPFSK']
+    real_data_=['8PSKGray','CPFSK']
+    number_=[1024]
     for real in real_data_:
         for num in number_:
             number=num
@@ -422,7 +428,7 @@ def draw_Series_Grid(seq,title,save_to,name,row,col):
 def recover_pic(model_save,result_save,type,label,tensorname,pic_number=2, iterations = 16000):
     print("regenerate data at {} {} {} ".format(type,label,iterations))
 
-    model_path=os.path.join(model_save,"{}-{}".format('model_WGAN',iterations))
+    model_path=os.path.join(model_save,"{}-{}".format(model_name,iterations))
     saver = tf.train.import_meta_graph(model_path+ ".meta")
     with tf.Session(config=config) as sess:
         saver.restore(sess, model_path)
