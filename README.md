@@ -10,7 +10,7 @@ a GAN architecture is build like below,the loss functions includs GAN,WGAN,LSGAN
 both the generator and discriminator is based on DNN,whose architectures are shown below<br/>
 ### reconstrction of AM signal
 ![image](https://github.com/jianqin123/GAN_Communication_Countermeasure/blob/master/imag/AM_regenaration.png)<br/>
-##architecture of conditional GAN
-![image](https://github.com/jianqin123/GAN_Communication_Countermeasure/blob/master/imag/conditiaon_GAN.png)
+## architecture of conditional GAN<br/>
+![image](https://github.com/jianqin123/GAN_Communication_Countermeasure/blob/master/imag/conditiaon_GAN.png)<br/>
 
 
