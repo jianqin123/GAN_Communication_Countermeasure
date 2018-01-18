@@ -1,0 +1,7 @@
+model_checkpoint_path: "GAN-5000"
+all_model_checkpoint_paths: "GAN-0"
+all_model_checkpoint_paths: "GAN-1000"
+all_model_checkpoint_paths: "GAN-2000"
+all_model_checkpoint_paths: "GAN-3000"
+all_model_checkpoint_paths: "GAN-4000"
+all_model_checkpoint_paths: "GAN-5000"
